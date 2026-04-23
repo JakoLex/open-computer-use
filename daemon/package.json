@@ -1,0 +1,38 @@
+{
+  "name": "coasty-command",
+  "version": "1.0.0",
+  "description": "Computer-use daemon for AI agents - exposes 50+ commands via MCP and WebSocket",
+  "main": "dist/index.js",
+  "bin": {
+    "coasty-command": "./dist/index.js"
+  },
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js start --token ${COASTY_TOKEN:-changeme}",
+    "stdio": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.10.0",
+    "ws": "^8.18.0",
+    "puppeteer-core": "^24.2.1",
+    "sharp": "^0.33.5",
+    "yargs": "^17.7.2",
+    "chalk": "^5.3.0",
+    "ora": "^8.1.0",
+    "execa": "^9.3.0",
+    "uuid": "^10.0.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.14",
+    "@types/yargs": "^17.0.33",
+    "@types/uuid": "^10.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^4.0.0"
+  }
+}

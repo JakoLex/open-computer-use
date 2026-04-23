@@ -1,0 +1,12 @@
+/** Barrel export for executor package */
+export { LocalExecutor } from './local-executor'
+export * from './handlers/desktop'
+export * from './handlers/terminal'
+export * from './handlers/file-ops'
+export * from './handlers/browser'
+export { captureScreenshot } from './handlers/screenshot'
+export * from './shared/params'
+export * from './shared/display-manager'
+export * from './shared/safety'
+export * from './shared/cli-indicator'
+export * from './shared/permissions'
