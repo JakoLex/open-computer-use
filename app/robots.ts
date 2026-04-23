@@ -6,34 +6,10 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: '*',
         allow: '/',
-        disallow: [
-          '/api/',
-          '/auth/error',
-          '/c/*/edit',
-          '/p/*/settings',
-        ],
+        disallow: ['/api/'],
         crawlDelay: 1,
       },
-      {
-        userAgent: ['Googlebot', 'Bingbot'],
-        allow: '/',
-        crawlDelay: 0,
-      },
-      {
-        userAgent: 'GPTBot',
-        allow: ['/', '/blog/', '/results/', '/compare/'],
-        disallow: ['/api/', '/c/'],
-      },
-      {
-        userAgent: ['ChatGPT-User', 'Google-Extended', 'Anthropic-AI', 'ClaudeBot', 'PerplexityBot', 'Cohere-AI', 'Bytespider', 'YouBot'],
-        allow: '/',
-        disallow: ['/api/', '/c/'],
-      },
-      {
-        userAgent: ['AhrefsBot', 'SemrushBot', 'MJ12bot', 'DotBot', 'PetalBot', 'BLEXBot'],
-        disallow: '/',
-      },
     ],
-    sitemap: 'https://coasty.ai/sitemap.xml',
+    sitemap: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/sitemap.xml`,
   }
 }
