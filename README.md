@@ -18,50 +18,11 @@ Browser automation · Terminal execution · Desktop control · File operations �
 
 ## What is this?
 
-Coasty Command is a **headless computer-use daemon** that exposes 50+ commands via **MCP (Model Context Protocol)** and **WebSocket**, allowing any AI agent to control your machine directly.
+Coasty Command is a **headless computer-use daemon** that exposes **57 commands** via **MCP (Model Context Protocol)** and **WebSocket**, allowing any AI agent to control your machine directly.
 
 Unlike chatbots that only *talk* about tasks — agents using Coasty Command **actually perform them**: browsing the web, running commands, clicking through UIs, and managing files.
 
 > Computer use capabilities similar to Anthropic's Claude Computer Use, but fully open-source, extensible, and agent-first.
-
-<br />
-
----
-
-<br />
-
-## Commands
-
-**Browser** — Navigation, form filling, element interaction, multi-tab management, screenshot capture.
-
-**Terminal** — Command execution, file operations, script running, package management, output streaming.
-
-**Desktop** — Mouse & keyboard control, window management, screenshot analysis, UI element detection.
-
-**Files** — Read, write, edit, search files and directories.
-
-<br />
-
----
-
-<br />
-
-## Architecture
-
-```
-AI Agent ←──── MCP stdio / WebSocket ────→ Coasty Command Daemon
-  │                                            │
-  │ (Claude Desktop, Cursor, Cline,          │
-  │  custom agents, OpenClaw, ...)           │
-  │                                   ┌──────┴──────────────────┐
-  │                                   │  Browser (Puppeteer)     │
-  │                                   │  Terminal (shell)        │
-  │                                   │  Desktop (xdotool /      │
-  │                                   │    PowerShell / Swift)   │
-  │                                   │  File operations         │
-  │                                   │  Screenshot capture      │
-  └───────────────────────────────────┴──────────────────────────┘
-```
 
 <br />
 
@@ -83,7 +44,6 @@ AI Agent ←──── MCP stdio / WebSocket ────→ Coasty Command Da
 ### 1. Install
 
 ```bash
-# Clone or install the package
 cd daemon
 npm install
 ```
@@ -102,8 +62,6 @@ export COASTY_TOKEN="your-secret-token"
 
 ```bash
 npm start
-# or
-npm run stdio
 ```
 
 **WebSocket server mode** (custom integrations):
@@ -117,14 +75,81 @@ npm run ws -- --port 9999
 **System check**:
 
 ```bash
-npm run test
+npm run test    # Run system diagnostics
+npm start info  # List all commands
 ```
 
-**View available commands**:
+**Test a specific command**:
 
 ```bash
-npm start info
+npm start test_cmd screenshot
 ```
+
+<br />
+
+---
+
+<br />
+
+## Commands
+
+Coasty Command exposes **57 commands** across 6 categories:
+
+### Browser Automation (18 commands)
+
+`browser_navigate` · `browser_go_back` · `browser_go_forward` · `browser_click` · `browser_type` · `browser_hover` · `browser_press_key` · `browser_wait` · `browser_find_element` · `browser_get_text` · `browser_scroll` · `browser_drag` · `browser_select_option` · `browser_upload_file` · `browser_evaluate` · `browser_list_bookmarks` · `browser_get_bookmark` · `browser_take_screenshot`
+
+### Terminal & File Ops (14 commands)
+
+`terminal_list_sessions` · `terminal_start_session` · `terminal_send` · `terminal_close` · `execute_command` · `file_read` · `file_write` · `file_edit` · `file_create` · `file_delete` · `file_copy` · `file_move` · `directory_list` · `directory_create` · `directory_delete`
+
+### Desktop Control (15 commands)
+
+`screenshot` · `click` · `double_click` · `type` · `key_<key>` · `scroll` · `drag` · `get_displays` · `set_active_display` · `detect_elements` · `ocr`
+
+### Window Management (Windows, 9 commands)
+
+`list_windows` · `switch_to_window` · `close_window` · `minimize` · `maximize` · `restore` · `arrange_windows` · `move_window`
+
+### System Utilities
+
+`check_permissions`, `restart_daemon`, `show_info`
+
+### Windows-Specific Window Management
+
+`list_windows`, `switch_to_window`, `close_window`, `minimize_window`, `maximize_window`, `restore_window`, `arrange_windows`, `move_window`
+
+<br />
+
+---
+
+<br />
+
+## Modes
+
+| Mode | Command | Use Case |
+|---|---|---|
+| **MCP stdio** | `coasty-command` | Claude Desktop, Cursor, Cline |
+| **WebSocket** | `coasty-command ws [port]` | Custom HTTP/WSS integrations |
+| **Info** | `coasty-command info` | List all 57 commands |
+| **System check** | `coasty-command test` | Diagnose platform setup |
+| **Test command** | `coasty-command test_cmd <cmd>` | Run single command and see result |
+
+<br />
+
+---
+
+<br />
+
+## Authentication
+
+Static token via `COASTY_TOKEN` env var. The daemon uses timing-safe string comparison to prevent timing attacks.
+
+```bash
+COASTY_TOKEN=secret npm start
+```
+
+The default value is `changeme` and will print a startup warning. Never use this in production.
 
 <br />
 
@@ -137,8 +162,9 @@ npm start info
 Coasty Command speaks the **Model Context Protocol** — the open standard for AI tool integration. Connect it to:
 
 - **Claude Desktop** — add to `claude_desktop_config.json`
-- **Cursor** — MCP settings
+- **Cursor** — MCP settings panel
 - **Cline** — MCP extension
+- **OpenWebUI** — Tools configuration
 - **Any MCP-compatible client**
 
 ```json
@@ -146,9 +172,9 @@ Coasty Command speaks the **Model Context Protocol** — the open standard for A
   "mcpServers": {
     "coasty-command": {
       "command": "node",
-      "args": ["path/to/coasty-command/dist/index.js"],
+      "args": ["dist/index.js"],
       "env": {
-        "COASTY_TOKEN": "your-token"
+        "COASTY_TOKEN": "your-secret-token"
       }
     }
   }
@@ -159,6 +185,8 @@ Coasty Command speaks the **Model Context Protocol** — the open standard for A
 
 ---
 
+<br />
+
 ## WebSocket Integration
 
 Connect via WebSocket for real-time streaming:
@@ -166,40 +194,25 @@ Connect via WebSocket for real-time streaming:
 ```typescript
 import { WebSocket } from 'ws'
 
-const ws = new WebSocket('ws://localhost:9999', {
-  headers: { Authorization: 'Bearer your-token' }
-})
-
+const ws = new WebSocket('ws://localhost:8765')
 ws.on('open', () => {
+  // Send a browser command
   ws.send(JSON.stringify({
     id: 1,
-    method: 'commands/browser.navigate',
+    method: 'browser_navigate',
     params: { url: 'https://example.com' }
   }))
 })
 
-ws.on('message', (data) => {
-  console.log(JSON.parse(data.toString()))
+ws.on('message', (raw) => {
+  const msg = JSON.parse(raw.toString())
+  console.log('Result:', msg)
 })
 ```
 
-<br />
+HTTP status endpoint: `GET http://localhost:8766/status`
 
----
-
-<br />
-
-## Tech Stack
-
-| Layer | Technologies |
-| --- | --- |
-| **Runtime** | Node.js 20+, TypeScript 5.7 |
-| **Protocol** | MCP stdio, WebSocket (ws) |
-| **Browser** | Puppeteer-core (Chrome/Edge/Brave) |
-| **Desktop (Linux)** | xdotool, wmctrl, xclip |
-| **Desktop (macOS)** | CoreGraphics (Swift), osascript |
-| **Desktop (Windows)** | PowerShell, user32.dll |
-| **Image Processing** | Sharp |
+Token: `COASTY_TOKEN` header or `Authorization: Bearer <token>`
 
 <br />
 
@@ -207,31 +220,112 @@ ws.on('message', (data) => {
 
 <br />
 
-## Project Structure
+## Architecture
 
 ```
-daemon/
-├── src/
-│   ├── index.ts                    # Entry point, CLI parser
-│   └── executor/
-│       ├── transport/
-│       │   ├── mcp-server.ts       # MCP protocol handler
-│       │   └── ws-server.ts        # WebSocket server
-│       ├── handlers/
-│       │   ├── browser.ts          # Browser automation (575 lines)
-│       │   ├── desktop.ts          # Mouse/keyboard/desktop (769 lines)
-│       │   ├── terminal.ts         # Shell command execution
-│       │   ├── file-ops.ts         # File read/write/search
-│       │   └── screenshot.ts       # Screenshot capture
-│       └── shared/
-│           ├── permissions.ts      # Access control
-│           ├── safety.ts           # Safety guardrails
-│           └── display-manager.ts  # Multi-monitor support
-├── tests/
-│   ├── safety.test.ts
-│   └── auth.test.ts
-├── package.json
-└── tsconfig.json
+                    AI Agent (Claude Desktop, Cursor, Cline, ...)
+                           │
+               ┌───────────┴───────────┐
+               │  MCP stdio  │  WebSocket (TCP)  │
+               └───────────┬───────────┘
+                           │
+                    Coasty Command Daemon
+                           │
+       ┌───────────────────┼───────────────────┐
+       │                   │                   │
+┌──────┴──────┐  ┌────────┴────────┐  ┌───────┴───────┐
+│  Handlers   │  │    Shared       │  │  Transport    │
+│             │  │   Modules       │  │               │
+│ desktop.ts  │  │ permissions.ts  │  │ mcp-server.ts │
+│ browser.ts  │  │ safety.ts       │  │ ws-server.ts  │
+│ terminal.ts │  │ display-man     │  │ auth.ts       │
+│ file-ops.ts │  │ params.ts       │  │               │
+│ screenshot. │  │ cli-indicator   │  │               │
+└──────┬──────┘  └────────┬────────┘  └───────────────┘
+       │                   │
+       └───────────────────┘
+                           │
+┌──────────────────────────┴──────────────────────────┐
+│  Platform-Specific Backends                         │
+│                                                     │
+│  Browser:     Puppeteer-core (Chrome/Edge/Brave)    │
+│  Terminal:    PowerShell (Win) / bash (mac/Linux)   │
+│  Desktop:     xdotool (Linux) / Swift (macOS)       │
+│                PowerShell + user32.dll (Windows)     │
+│  Screenshot:  scrot / screencapture / PowerShell    │
+└─────────────────────────────────────────────────────┘
+```
+
+<br />
+
+---
+
+<br />
+
+## Full Project Structure
+
+```
+open-computer-use/
+├── daemon/                     # ⭐ Computer-use daemon (20 source files)
+│   ├── src/
+│   │   ├── index.ts            # CLI entry, 5 subcommands
+│   │   └── executor/
+│   │       ├── local-executor.ts   # Command registry (57 commands)
+│   │       ├── auth.ts             # Token auth (timing-safe)
+│   │       ├── transport/
+│   │       │   ├── mcp-server.ts   # MCP stdio server
+│   │       │   └── ws-server.ts    # WebSocket server
+│   │       ├── handlers/
+│   │       │   ├── browser.ts      # Puppeteer browser automation (18 cmds)
+│   │       │   ├── desktop.ts      # Mouse, keyboard, scroll, drag (12 cmds)
+│   │       │   ├── terminal.ts     # Shell sessions & commands (5 cmds)
+│   │       │   ├── file-ops.ts     # File/dir CRUD (12 cmds)
+│   │       │   ├── screenshot.ts   # Cross-platform screenshots (3 cmds)
+│   │       │   └── index.ts        # Barrel exports
+│   │       └── shared/
+│   │           ├── display-manager.ts  # Multi-display detection
+│   │           ├── safety.ts           # Path cmd/env validation
+│   │           ├── params.ts           # Param normalization
+│   │           ├── permissions.ts      # macOS access checks
+│   │           ├── cli-indicator.ts    # Terminal spinners
+│   │           └── index.ts            # Barrel exports
+│   ├── tests/
+│   │   ├── safety.test.ts      # Path, cmd, env security (38 tests)
+│   │   └── auth.test.ts        # Token auth verification (18 tests)
+│   ├── package.json            # Dependencies: MCP SDK, ws, puppeteer-core
+│   ├── tsconfig.json           # CommonJS build config
+│   └── README.md               # Extended daemon docs
+│
+├── app/                        # Next.js frontend (stripped to status UI)
+│   ├── page.tsx                # Redirects to /
+│   ├── home-client.tsx         # Status dashboard (polls daemon)
+│   ├── status/page.tsx         # Health status endpoint
+│   ├── api-docs/page.tsx       # MCP + WebSocket API docs
+│   ├── api/health/route.ts     # HTTP health check
+│   ├── layout.tsx              # Root layout (dark theme only)
+│   ├── layout-client.tsx       # ThemeProvider client wrapper
+│   ├── error.tsx, not-found.tsx, sitemap.ts, robots.ts
+│   └── ...                       # Error boundary, 404, SEO
+│
+├── electron/                   # ⏸ Electron desktop app (untouched)
+│   ├── src/main/               # Main process (tray, auth, ws-bridge)
+│   ├── src/renderer/           # React UI (auth, overlay, chat)
+│   └── ...
+│
+├── lib/                        # Shared libraries (stripped down)
+│   ├── config.ts               # Env constants (stub)
+│   ├── utils.ts                # cn() class merge utility
+│   ├── status/                 # Health checker for frontend UI
+│   ├── constants/              # Basic constants
+│   └── models/                 # Model type definitions
+│
+├── infra/                      # AWS/Cloud infrastructure
+├── docker/                     # Docker configurations
+├── scripts/                    # CI/deploy scripts
+├── next.config.ts              # Next.js config (i18n removed)
+├── middleware.ts               # Security headers (CSP, HSTS)
+├── tsconfig.json               # TypeScript config
+└── package.json, lockfile
 ```
 
 <br />
@@ -242,11 +336,83 @@ daemon/
 
 ## Platform Support
 
-| Platform | Browser | Terminal | Desktop | Files |
-| --- | --- | --- | --- | --- |
-| **Linux** | ✅ | ✅ | ✅ (xdotool) | ✅ |
-| **macOS** | ✅ | ✅ | ✅ (Swift) | ✅ |
-| **Windows** | ✅ | ✅ | ✅ (PowerShell) | ✅ |
+| Feature | Linux | macOS | Windows |
+|---|---|---|---|
+| **Browser** | ✅ Chromium/Chrome | ✅ Chrome/Edge/Brave | ✅ Chrome/Edge/Brave |
+| **Terminal** | ✅ bash/sh | ✅ /bin/bash | ✅ PowerShell |
+| **Desktop** | ✅ xdotool | ✅ CoreGraphics/Swift | ✅ user32.dll |
+| **Screenshot** | ✅ scrot/gnome | ✅ screencapture | ✅ PowerShell |
+| **Window mgmt** | ✅ wmctrl | ⚠ Limited | ✅ Full support |
+
+### Screenshot Tool Discovery
+
+| Platform | Tools checked |
+|---|---|
+| **Windows** | PowerShell + `PrintWindow`, `Bitmap`, `BitBlt` |
+| **macOS** | `screencapture` (builtin) |
+| **Linux** | `scrot` → `gnome-screenshot` → `import` (ImageMagick) |
+
+<br />
+
+---
+
+<br />
+
+## Build & Test
+
+```bash
+# Build frontend
+npm run build            # → 11 pages generated
+
+# Build daemon
+cd daemon && npm run build    # → dist/ output
+
+# Run tests
+cd daemon && npm test        # → 56 passing tests
+```
+
+<br />
+
+---
+
+<br />
+
+## Dependencies
+
+| Package | Purpose |
+|---|---|
+| `@modelcontextprotocol/sdk` | MCP stdio server |
+| `ws` | WebSocket server |
+| `puppeteer-core` | Browser automation (headless Chrome) |
+| `sharp` | Screenshot compression (JPEG, 70%) |
+| `yargs` | CLI argument parsing |
+| `chalk` | Terminal colors |
+| `ora` | Terminal spinners/status indicators |
+| `execa` | Child process execution (shell) |
+| `@types/*` | TypeScript type definitions |
+
+<br />
+
+---
+
+<br />
+
+## Stripped Features (Previously Removed)
+
+The following cloud/enterprise features were removed in v2 as part of the daemon-only rewrite:
+
+- **Supabase auth** (database, sessions, login)
+- **Chat system** (messages, conversations, streaming)
+- **Billing/Stripe** (credits, subscriptions, webhooks)
+- **Cloud VMs** (Azure/AWS instances, VNC, SSH)
+- **Multi-chat** (concurrent AI conversations)
+- **i18n** (33 locale files, next-intl)
+- **PostHog analytics**
+- **Settings pages** (appearance, billing, connections)
+- **Machine manager** (cards, VNC viewer, file transfer)
+- **Blog, pricing, terms, privacy pages**
+
+Total: **574 files deleted** (205K lines) → **23 files remaining** (daemon + status UI)
 
 <br />
 
@@ -258,7 +424,7 @@ daemon/
 
 1. Fork the repo
 2. Create a branch: `git checkout -b feature/your-feature`
-3. Commit your changes
+3. Commit your changes: `git commit -m "feat: add your feature"`
 4. Open a pull request
 
 Bug reports and feature requests welcome in [Issues](https://github.com/JakoLex/open-computer-use/issues).
@@ -281,6 +447,6 @@ Bug reports and feature requests welcome in [Issues](https://github.com/JakoLex/
 
 <div align="center">
 
-**[Star on GitHub](https://github.com/JakoLex/open-computer-use)**
+[Star on GitHub](https://github.com/JakoLex/open-computer-use) · [Report Bug](https://github.com/JakoLex/open-computer-use/issues)
 
 </div>
