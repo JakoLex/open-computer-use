@@ -2,14 +2,14 @@
 # =============================================================================
 # Coasty — Pre-Deployment Test Suite
 #
-# Runs all tests across frontend, backend, and electron layers.
+# Runs all tests across frontend and backend layers.
 # Exit code is non-zero if ANY suite fails.
 #
 # Usage:
 #   bash scripts/run-all-tests.sh          # run all
 #   bash scripts/run-all-tests.sh frontend  # run only frontend
 #   bash scripts/run-all-tests.sh backend   # run only backend
-#   bash scripts/run-all-tests.sh electron  # run only electron
+
 # =============================================================================
 set -euo pipefail
 
@@ -81,16 +81,7 @@ if [[ "$FILTER" == "all" || "$FILTER" == "backend" ]]; then
 fi
 
 # -----------------------------------------------
-# 3. Electron Tests (Vitest)
-# -----------------------------------------------
-if [[ "$FILTER" == "all" || "$FILTER" == "electron" ]]; then
-  banner "ELECTRON TESTS (Vitest)"
-  cd "$ROOT_DIR/electron"
-  run_suite "Electron Unit Tests" npx vitest run --reporter=verbose
-fi
-
-# -----------------------------------------------
-# 4. Type Checking (TypeScript)
+# 3. Type Checking (TypeScript)
 # -----------------------------------------------
 if [[ "$FILTER" == "all" || "$FILTER" == "typecheck" ]]; then
   banner "TYPE CHECKING"

@@ -307,7 +307,7 @@ open-computer-use/
 │   ├── error.tsx, not-found.tsx, sitemap.ts, robots.ts
 │   └── ...                       # Error boundary, 404, SEO
 │
-├── electron/                   # ⏸ Electron desktop app (untouched)
+
 │   ├── src/main/               # Main process (tray, auth, ws-bridge)
 │   ├── src/renderer/           # React UI (auth, overlay, chat)
 │   └── ...

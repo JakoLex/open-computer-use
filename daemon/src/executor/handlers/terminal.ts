@@ -1,6 +1,5 @@
 /**
  * Terminal — shell session execution.
- * Adapted from Electron's terminal.ts for standalone Node.js.
  */
 
 import { execFile } from 'child_process'

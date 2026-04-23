@@ -176,6 +176,9 @@ export async function openBrowser(params: { url?: string } = {}): Promise<any> {
         '--no-default-browser-check',
         '--disable-backgrounding-occluded-windows',
         '--disable-renderer-backgrounding',
+        '--disable-gpu',
+        ...(process.platform === 'linux' ? ['--no-sandbox', '--disable-setuid-sandbox'] : []),
+        ...(process.env.WAYLAND_DISPLAY ? ['--ozone-platform-hint=auto'] : []),
       ],
     })
 

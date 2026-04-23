@@ -1,6 +1,5 @@
 /**
  * Desktop automation — mouse/keyboard/scroll/drag (all platforms).
- * Adapted from Electron's desktop-automation.ts for standalone Node.js.
  *
  * Uses platform-native tools:
  * - Windows: PowerShell + user32.dll calls

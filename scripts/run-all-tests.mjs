@@ -8,7 +8,7 @@
 //   node scripts/run-all-tests.mjs            # run all
 //   node scripts/run-all-tests.mjs frontend   # run only frontend
 //   node scripts/run-all-tests.mjs backend    # run only backend
-//   node scripts/run-all-tests.mjs electron   # run only electron
+
 //   node scripts/run-all-tests.mjs typecheck  # run only type check
 // =============================================================================
 
@@ -102,11 +102,6 @@ if (filter === "all" || filter === "backend") {
     `${py} -m pytest tests/ -v --tb=short`,
     join(ROOT, "backend"),
   )
-}
-
-if (filter === "all" || filter === "electron") {
-  banner("ELECTRON TESTS (Vitest)")
-  run("Electron Unit Tests", "npx vitest run --reporter=verbose", join(ROOT, "electron"))
 }
 
 if (filter === "all" || filter === "typecheck") {

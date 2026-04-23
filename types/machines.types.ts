@@ -53,9 +53,9 @@ export interface MachineSettings {
   allowClipboardSync?: boolean;
   customSoftware?: string[];
   isLocal?: boolean;
-  provider?: 'azure' | 'aws' | 'docker' | 'local' | 'electron';
+  provider?: 'azure' | 'aws' | 'docker' | 'local';
   osType?: 'linux' | 'windows';
-  // Electron machine metadata
+  // Machine metadata
   platform?: string;   // win32, darwin, linux
   hostname?: string;
   username?: string;

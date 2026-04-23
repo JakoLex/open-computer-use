@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Coasty** is a full-stack AI collaboration platform with computer automation capabilities. It features a Next.js frontend with a FastAPI Python backend that orchestrates multi-agent AI systems capable of browser automation, terminal operations, and desktop control through containerized virtual machines. A cross-platform Electron desktop app provides a lightweight overlay that executes AI agent commands directly on the user's local machine.
+**Coasty** is an open-source AI computer-use daemon. It exposes 50+ commands via two transports:
+- **MCP stdio**: Direct integration with Claude Desktop, Cursor, Cline, and any MCP-compatible client
+- **WebSocket** (TCP, port 8765): Programmatic API for custom integrations
 
 ## Architecture
 
@@ -37,28 +39,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Communication**: WebSocket protocol on port 8080 (8081 for localhost)
 - **Tools**: Each agent has specialized tools (browser navigation, terminal commands, desktop controls)
 
-### Electron Desktop App (`electron/`)
+### Daemon (`daemon/`) — Core Component
 
-A cross-platform Electron app (v40.6.0) that runs as a floating overlay on the user's desktop, executing AI agent commands locally instead of in a remote VM.
+Standalone Node.js CLI tool that exposes 57 computer-use commands via MCP stdio (for Claude Desktop, Cursor, Cline) and WebSocket (port 8765, for custom integrations).
 
-- **Build System**: electron-vite + electron-builder, React 19 + Tailwind CSS renderer
-- **Version**: 1.5.0 (`com.coasty.desktop`)
-- **Key Dependencies**: `puppeteer-core` (browser automation), `ws` (WebSocket client)
+#### Command Categories (57 total)
 
-#### Main Process (`electron/src/main/`)
-
-- **`index.ts`**: App entry — creates frameless transparent window, system tray, registers IPC handlers, auto-updater
-- **`auth.ts`**: Google OAuth via Supabase implicit flow — spins up local HTTP server on random port for callback, extracts tokens from URL fragment via HTML redirect trick, auto-refreshes tokens 5min before expiry
-- **`ws-bridge.ts`**: Persistent WebSocket to backend `/api/electron/ws` — sends system info as URL params, auth credentials in first message body (not URL), auto-reconnect with exponential backoff (max 15s), 30s heartbeat
-- **`window-manager.ts`**: Three modes — `auth` (400x500 centered), `compact` (360x56 top-center pill), `expanded` (400x520 chat panel). Smooth animation (320ms quintic ease-out), always-on-top management, opacity control (0.15–1.0), hides before screenshots
-- **`local-executor.ts`**: Command handler registry (50+ commands) — maps backend command names to local handlers, normalizes params (filepath→path, find→old_text), auto-hides overlay during UI interactions
-- **`desktop-automation.ts`**: Platform-specific mouse/keyboard/scroll/drag operations
-- **`browser-automation.ts`**: Puppeteer-core controlling installed Chrome/Edge/Brave with isolated temp user-data-dir
-- **`terminal.ts`**: Session-based shell execution (PowerShell on Windows, bash on Unix), 30s timeout
-- **`file-ops.ts`**: File system CRUD (read, write, edit, append, delete, directory listing)
-- **`screenshot.ts`**: Electron `desktopCapturer` API, resized to max 1280px, JPEG 70% quality
-- **`permissions.ts`**: macOS-only — checks Screen Recording and Accessibility permissions
-- **`auto-updater.ts`**: Generic update provider at `https://updates.coasty.ai`, checks every 4 hours
+| Category | Count | Examples |
+|---|---|---|
+| **Browser Automation** | 18 | `browser_navigate`, `browser_click`, `browser_type`, `browser_evaluate`, `browser_take_screenshot` |
+| **Desktop Control** | 12 | `click`, `double_click`, `type`, `key_press`, `key_combo`, `scroll`, `drag`, `screenshot`, `detect_elements`, `ocr` |
+| **Terminal Execution** | 6 | `terminal_start_session`, `terminal_send`, `terminal_close`, `execute_command` |
+| **File Operations** | 12+ | `file_read`, `file_write`, `file_edit`, `file_delete`, `directory_list`, `file_copy`, `file_move` |
+| **Window Management** | 9 | `list_windows`, `switch_to_window`, `minimize`, `arrange_windows` |
+| **System Utilities** | 5+ | `get_displays`, `set_active_display`, `check_permissions`, `restart_daemon`, `show_info` |
 
 #### Platform-Specific Implementations
 
@@ -70,59 +64,57 @@ A cross-platform Electron app (v40.6.0) that runs as a floating overlay on the u
   - Key combos via `keybd_event` with virtual key codes (supports Win key, modifiers)
   - Scroll via `MOUSEEVENTF_WHEEL` (120 units per notch)
   - Drag via cursor position + mousedown/mouseup sequence
-- **Browser Discovery**: Checks Program Files, Program Files (x86), LocalAppData for Chrome/Edge/Brave; falls back to `where.exe` PATH search
-- **Terminal**: Uses `powershell.exe -Command` for all shell execution
-- **Window Management**: PowerShell + `user32.dll ShowWindow` for minimize/maximize/restore/close; `Microsoft.VisualBasic.Interaction.AppActivate` for window switching
-- **Window Z-Order Workaround**: Transparent frameless windows lose always-on-top on Windows; fix is hide→apply bounds→show sequence on auth→overlay transition, with retries at 600ms/1200ms/2000ms/3000ms
-- **Build**: NSIS installer, allows custom install directory, desktop + start menu shortcuts
+- **Browser**: `puppeteer-core` with Chrome/Edge/Brave detection
+- **Terminal**: `powershell.exe -Command`
+- **Window Management**: PowerShell + `user32.dll ShowWindow`
 
 **macOS:**
 
-- **Desktop Automation**: Swift scripts via CoreGraphics + osascript
-  - Click/double-click via `CGEvent` with proper `mouseEventClickState` for double-clicks
-  - Typing via `osascript 'tell application "System Events" to keystroke'`
-  - Key combos via osascript with modifier mapping (ctrl→`control down`, cmd→`command down`) + CGKeyCode for special keys
-  - Scroll via `CGEvent(scrollWheelEvent2Source:)` with line units
-  - Drag via CGEvent sequence (leftMouseDown → leftMouseDragged → leftMouseUp)
-- **Browser Discovery**: Checks `/Applications/` for Google Chrome, Microsoft Edge, Brave Browser `.app` bundles; falls back to `which`
-- **Terminal**: Uses `/bin/bash -c` for shell execution
-- **Permissions**: Checks Screen Recording (`getMediaAccessStatus` + actual capture fallback) and Accessibility (`isTrustedAccessibilityClient`); provides System Preferences deep links
-- **Window Behavior**: `setVisibleOnAllWorkspaces` for macOS Spaces, dock icon set separately via `app.dock.setIcon`
-- **App Lifecycle**: Does not quit on window close (`window-all-closed` ignored on darwin), `activate` event re-creates window
-- **Build**: DMG + ZIP targets, hardened runtime, code signing, notarization, entitlements for accessibility/screen recording
+- **Desktop Automation**: Swift scripts via CoreGraphics + `osascript`
+- **Browser**: `puppeteer-core` with Chrome/Edge/Brave detection
+- **Terminal**: `/bin/bash -c`
+- **Permissions**: Checks Screen Recording + Accessibility programmatically
 
-**Linux:**
+**Linux (Arch/CachyOS/Wayland):**
 
-- **Desktop Automation**: `xdotool` for mouse/keyboard, `wmctrl` for window management
-- **Browser Discovery**: Checks `/usr/bin/` for google-chrome, chromium-browser, microsoft-edge, brave-browser
-- **Build**: AppImage target
+- **Desktop Automation**: `xdotool` for mouse/keyboard, `xdotool` for window management
+- **Browser**: `puppeteer-core` with `--no-sandbox --disable-setuid-sandbox` (Linux), `--ozone-platform-hint=auto` (Wayland)
+- **Terminal**: `/bin/bash`
+- **Screenshot**: `grim` (Wayland), `scrot` (X11), `import` (ImageMagick), `gnome-screenshot`, `spectacle`
+- **Display Detection**: `xrandr` (works on both X11 and Wayland via XWayland), `hyprctl` (Hyprland)
+- **File Operations**: Native Node.js + standard POSIX commands
 
-#### Renderer Process (`electron/src/renderer/`)
+#### Architecture
 
-- **Zustand Stores**: `auth-store` (user session), `connection-store` (WebSocket state), `chat-store` (messages, tool invocations, chat CRUD), `window-store` (mode sync)
-- **SSE Parser** (`lib/sse-parser.ts`): Parses backend events — text (0), error (3), tool call (9), tool result (a), reasoning (g), finish (d)
-- **Key Components**: `AuthScreen` (Google OAuth), `Overlay` (pill bar + expanded chat panel), `PermissionsGuard` (macOS permission prompts), `MessageList`, `ChatHistory`
+- **Entry**: `daemon/src/index.ts` — CLI with 7 subcommands (`stdio`, `ws`, `info`, `test`, `test_cmd`, etc.)
+- **Command Registry**: `daemon/src/executor/local-executor.ts` — 57 command handlers
+- **MCP Transport**: `daemon/src/executor/transport/mcp-server.ts` — Uses `@modelcontextprotocol/sdk` v1.10.0
+- **WebSocket Transport**: `daemon/src/executor/transport/ws-server.ts` — Custom TCP server on port 8765
+- **Handler Modules**: `daemon/src/executor/handlers/` — browser, desktop, terminal, file-ops, screenshot
 
-#### Preload Bridge (`electron/src/preload/`)
-
-Exposes `window.coasty` TypeScript API: auth methods, bridge control, chat CRUD, credits, window control (mode, opacity), update control, macOS permissions, event listeners
-
-#### IPC Communication
-
-- **Auth**: `auth:sign-in`, `auth:sign-out`, `auth:get-session`, `auth:get-token`
-- **WebSocket Bridge**: `bridge:connect`, `bridge:disconnect`, `bridge:get-state`
-- **Chat CRUD**: Create, list, get messages, update, delete — all call FastAPI backend with Bearer token
-- **Window**: `window:set-mode`, `window:set-opacity`, `window:get-opacity`
-- **Permissions**: `permissions:check`, `permissions:request-accessibility`, `permissions:open-screen-recording`
-- **Updates**: `update:get-status`, `update:get-version`, `update:install`
-- **Machine ID**: Deterministic UUID v5 hash of `electron-{user_id}-{hostname}-{username}-{platform}`
-
-#### Backend Integration
-
-- `/api/electron/ws` — WebSocket for receiving and executing commands
-- `/api/chats/create`, `/api/chats/list`, `/api/chats/{id}/messages` — Chat persistence
-- `/api/chat/` — SSE streaming chat responses
-- `/api/billing/credits/balance` — Credit checks
+```
+daemon/src/
+├── index.ts                      # CLI entry
+├── executor/
+│   ├── local-executor.ts         # 57 command handlers
+│   ├── auth.ts                   # COASTY_TOKEN auth
+│   ├── transport/
+│   │   ├── mcp-server.ts         # MCP stdio protocol
+│   │   └── ws-server.ts          # WebSocket server
+│   ├── handlers/
+│   │   ├── browser.ts            # Puppeteer automation
+│   │   ├── desktop.ts            # Mouse/keyboard/scroll/drag
+│   │   ├── terminal.ts           # Shell sessions
+│   │   ├── file-ops.ts           # File CRUD
+│   │   ├── screenshot.ts         # Cross-platform screenshots
+│   │   └── index.ts
+│   └── shared/
+│       ├── display-manager.ts    # Multi-display detection
+│       ├── safety.ts             # Path sanitization, command whitelist
+│       ├── params.ts             # Param normalization
+│       ├── permissions.ts        # macOS permission checks
+│       └── cli-indicator.ts      # Terminal spinners (ora)
+```
 
 ### Key Design Patterns
 
@@ -197,28 +189,26 @@ python main.py
 ./run_backend.sh
 ```
 
-### Electron Desktop App Development
+### Daemon Development
 
 ```bash
-# Navigate to electron directory
-cd electron
+# Navigate to daemon directory
+cd daemon
 
 # Install dependencies
 npm install
 
-# Development mode (with hot reload)
+# Development mode
 npm run dev
 
 # Build (compile TypeScript)
 npm run build
 
-# Package for current platform
-npm run package
+# Start daemon with MCP stdio
+npm run stdio
 
-# Package for specific platform
-npm run package:win    # Windows NSIS installer
-npm run package:mac    # macOS DMG + ZIP
-npm run package:linux  # Linux AppImage
+# Start daemon with WebSocket
+node dist/index.js ws --token your-token-here
 ```
 
 ### Docker Deployment
@@ -275,14 +265,7 @@ pytest --cov=app tests/
 - `CSRF_SECRET`, `ENCRYPTION_KEY`: Security keys (must match frontend)
 - `GOOGLE_SEARCH_KEY`, `GOOGLE_SEARCH_CX`: Google Custom Search API
 
-### Electron Environment Variables (electron/.env)
-
-- `COASTY_BACKEND_URL`: Backend API endpoint (default: `http://localhost:8001`)
-- `NEXT_PUBLIC_SUPABASE_URL`: Supabase auth/DB URL (shared with frontend)
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Supabase anon key (shared with frontend)
-- These are injected at build time via electron-vite `define` config
-
-See `.env.example` and `backend/.env.example` for complete configuration templates.
+See `.env.example` for complete configuration templates.
 
 ## Code Organization
 
@@ -313,32 +296,6 @@ See `.env.example` and `backend/.env.example` for complete configuration templat
   - `models/`: Pydantic data models
   - `providers/`: AI provider integrations
   - `utils/`: Utility functions
-
-### Electron Structure
-
-- `electron/`
-  - `src/main/`: Main process — app lifecycle, IPC, WebSocket bridge, automation modules
-    - `index.ts`: App entry, window creation, tray, IPC registration
-    - `auth.ts`: Supabase Google OAuth with local HTTP callback server
-    - `ws-bridge.ts`: WebSocket client to backend with auto-reconnect
-    - `window-manager.ts`: Window modes, animation, opacity, screenshot hiding
-    - `local-executor.ts`: Command dispatch registry (50+ commands)
-    - `desktop-automation.ts`: Platform-specific mouse/keyboard (Win32/macOS/Linux)
-    - `browser-automation.ts`: Puppeteer-core browser control
-    - `terminal.ts`: Shell execution (PowerShell/bash)
-    - `file-ops.ts`: File system operations
-    - `screenshot.ts`: Desktop capture via Electron API
-    - `permissions.ts`: macOS permission checks
-    - `auto-updater.ts`: Auto-update lifecycle
-  - `src/preload/`: Context bridge exposing `window.coasty` API
-  - `src/renderer/`: React 19 UI
-    - `stores/`: Zustand stores (auth, connection, chat, window)
-    - `components/`: AuthScreen, Overlay, MessageList, PermissionsGuard
-    - `hooks/`: `useChatSubmit` for chat message flow
-    - `lib/`: API client, SSE parser, utilities
-  - `build/`: Icons (ico/icns/png), macOS entitlements plist
-  - `electron-builder.yml`: Build config (NSIS, DMG, AppImage)
-  - `electron.vite.config.ts`: Vite config with env injection
 
 ### Docker Structure
 
@@ -373,21 +330,27 @@ See `.env.example` and `backend/.env.example` for complete configuration templat
 3. Add tool to appropriate agent's tool list in `multi_agent_executor.py`
 4. Implement tool execution in VM agent server (if needed)
 
-### Adding a New Electron Local Command
+### Adding a New Daemon Command
 
-1. Create handler function in the appropriate module (`desktop-automation.ts`, `browser-automation.ts`, `terminal.ts`, `file-ops.ts`, or a new module)
-2. Register the command name → handler mapping in `local-executor.ts` `registerHandlers()`
-3. If the command involves UI interaction (clicks, typing), wrap with `this.withOverlayHidden()`
-4. Add parameter normalization in `normalizeParams()` if backend sends different param names
-5. Backend sends commands via the WebSocket bridge as `{ type: 'command', data: { command, parameters } }`
+1. Create handler function in the appropriate module (`daemon/src/executor/handlers/desktop.ts`, `browser.ts`, `terminal.ts`, `file-ops.ts`, or a new module)
+2. Register the command name → handler mapping in `daemon/src/executor/local-executor.ts` `registerHandlers()`
+3. Add parameter normalization in `normalizeParams()` if needed
+4. Run `npm run build` in the `daemon/` directory to compile
 
 ### Adding Platform-Specific Desktop Automation
 
-1. Add the function in `desktop-automation.ts` with `process.platform` branching
+1. Add the function in `daemon/src/executor/handlers/desktop.ts` with `process.platform` branching
 2. **Windows**: Use `runPowershell()` with user32.dll P/Invoke via `Add-Type @"..."@`
 3. **macOS**: Use `runSwift()` for CoreGraphics or `runBash()` with `osascript` for System Events
 4. **Linux**: Use `runBash()` with `xdotool` or `wmctrl`
-5. Register in `local-executor.ts` and wrap with `withOverlayHidden()` if it interacts with the desktop
+5. Register in `local-executor.ts`
+
+### Adding a New Daemon Screenshot Handler
+
+1. Update `daemon/src/executor/handlers/screenshot.ts`
+2. Add platform-specific tool detection via `commandExists()`
+3. Add Wayland tools (grim/slurp/spectacle) for Wayland compositors
+4. Add X11 tools (scrot/import/gnome-screenshot) for X11 sessions
 
 ## Important Technical Details
 
@@ -427,9 +390,9 @@ See `.env.example` and `backend/.env.example` for complete configuration templat
 - Rate limiting on backend endpoints
 - Supabase Row Level Security (RLS) for data access
 - No credentials stored in VM environments
-- **Electron**: Context isolation enabled, node integration disabled, sandbox=false (required for native modules)
-- **Electron**: Auth tokens sent in WebSocket message body, not URL params (avoids proxy/CDN logging)
-- **Electron**: Window title passed via env var (`_COASTY_WIN_TITLE`) to avoid shell injection in window switching
+- **Daemon**: Token-based auth via `COASTY_TOKEN`, timing-safe comparison
+- **Daemon**: Path sanitization and command whitelisting for file operations
+- **Daemon**: Window title passed via env var (`_COASTY_WIN_TITLE`) to avoid shell injection in window switching
 
 ## Common Development Tasks
 
@@ -440,15 +403,17 @@ See `.env.example` and `backend/.env.example` for complete configuration templat
 4. Add state management in appropriate store (`lib/*-store/`)
 5. Wire up API calls in `lib/services/` or route handlers
 
-### Debugging Electron Desktop App Issues
+### Debugging Daemon Desktop Automation Issues
 
-1. Check WebSocket bridge connection in console — `[WS Bridge]` log prefix shows connect/disconnect/auth events
-2. Verify backend `/api/electron/ws` endpoint is running and accepting connections
-3. On Windows: if overlay loses always-on-top, check `window-manager.ts` z-order workaround logic
-4. On macOS: if automation fails, check Screen Recording + Accessibility permissions via `permissions.ts`
-5. Browser automation: ensure Chrome/Edge/Brave is installed; Puppeteer uses isolated temp profile to avoid locks
-6. If clicks/typing don't work: verify overlay is hiding before desktop actions (`withOverlayHidden` wrapper)
-7. Auth issues: check local HTTP callback server port binding, Supabase OAuth redirect URL config
+1. Verify `xdotool` (Linux), PowerShell `user32.dll` (Windows), or `osascript` + CoreGraphics (macOS) is installed
+2. On Linux/Wayland: ensure `xdotool` works with your display server; test with `xdotool search --name ""`
+3. On Linux/Wayland: screenshot tools priority is `grim` → `gnome-screenshot` → `spectacle` → `scrot` → `import`
+4. On Linux Wayland-only distros: install `grim` + `slurp` for Wayland screenshots, `xdotool` works via XWayland
+5. Browser automation: ensure Chrome/Edge/Brave is installed on the system
+6. On Linux: browser uses `--no-sandbox` flag for headless Chrome on Arch/CachyOS
+7. Check daemon logs for `[Desktop]`, `[Browser]`, `[Screenshot]` prefixes
+
+### Debugging VM Agent Issues
 
 ### Debugging VM Agent Issues
 1. Check WebSocket connection status in `vm_control.py` logs
@@ -484,7 +449,4 @@ See `.env.example` and `backend/.env.example` for complete configuration templat
 - **Billing system** tracks agent usage by session duration
 - **Multi-model support** allows users to switch providers mid-conversation
 - **Screenshot compression** is critical for performance (JPEG, 70% quality)
-- **Electron app** launches at login (packaged builds), runs as always-on-top overlay on all virtual desktops
-- **Electron auto-updates** via generic provider at `https://updates.coasty.ai` (checks every 4 hours)
-- **Electron browser automation** uses `puppeteer-core` with temp user-data-dir to avoid Chrome profile locks
-- **Electron overlay** auto-hides during desktop automation to prevent interfering with clicks/screenshots
+- **Puppeteer browser automation** uses temp user-data-dir to avoid Chrome profile locks

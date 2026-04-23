@@ -11,7 +11,7 @@ export default defineConfig({
     globals: true,
     environment: "node",
     include: ["tests/**/*.test.ts"],
-    exclude: ["node_modules", "electron", ".next", "backend"],
+    exclude: ["node_modules", ".next", "backend"],
     testTimeout: 15000,
     setupFiles: ["tests/setup.ts"],
     coverage: {

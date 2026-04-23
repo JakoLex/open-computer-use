@@ -1,5 +1,5 @@
 /**
- * File operations — CRUD adapted from Electron's file-ops.ts for standalone Node.js.
+ * File operations — CRUD for local filesystem.
  */
 
 import * as fs from 'fs/promises'

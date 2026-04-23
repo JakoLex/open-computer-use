@@ -1,14 +1,14 @@
 # =============================================================================
 # Coasty — Pre-Deployment Test Suite (PowerShell)
 #
-# Runs all tests across frontend, backend, and electron layers.
+# Runs all tests across frontend and backend layers.
 # Exit code is non-zero if ANY suite fails.
 #
 # Usage:
 #   .\scripts\run-all-tests.ps1           # run all
 #   .\scripts\run-all-tests.ps1 frontend  # run only frontend
 #   .\scripts\run-all-tests.ps1 backend   # run only backend
-#   .\scripts\run-all-tests.ps1 electron  # run only electron
+
 # =============================================================================
 
 param(
@@ -77,17 +77,7 @@ if ($Filter -eq "all" -or $Filter -eq "backend") {
 }
 
 # -----------------------------------------------
-# 3. Electron Tests (Vitest)
-# -----------------------------------------------
-if ($Filter -eq "all" -or $Filter -eq "electron") {
-    Write-Banner "ELECTRON TESTS (Vitest)"
-    Push-Location "$RootDir\electron"
-    Run-Suite "Electron Unit Tests" "npx vitest run --reporter=verbose"
-    Pop-Location
-}
-
-# -----------------------------------------------
-# 4. Type Checking (TypeScript)
+# 3. Type Checking (TypeScript)
 # -----------------------------------------------
 if ($Filter -eq "all" -or $Filter -eq "typecheck") {
     Write-Banner "TYPE CHECKING"

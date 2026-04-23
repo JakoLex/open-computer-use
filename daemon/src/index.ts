@@ -15,6 +15,7 @@
  */
 
 import chalk from 'chalk'
+import { LocalExecutor } from './executor/local-executor'
 import { startMcpServer, startWsServer } from './executor/transport'
 import { getToken } from './executor/auth'
 import { checkAllPermissions } from './executor/shared'
@@ -64,10 +65,8 @@ async function main() {
       await startWsServer({ port })
       break
 
-    case 'info':
-      // Import is needed inside main to avoid timing issues with ES modules
-      const { LocalExecutor } = require('./executor/local-executor')
-      const executor = new LocalExecutor()
+  case 'info':
+       const executor = new LocalExecutor()
       const commands = executor.getCommandMetas()
       const groups = {
         desktop: [],
@@ -188,14 +187,14 @@ async function main() {
       console.log('\n' + chalk.green.bold('\n  Ready to go! Start with: coasty-command\ndefault token: "changeme" — set COASTY_TOKEN to change.\n'))
       break
 
-    case 'test_cmd':
-       const testCmd = args[1] || 'screenshot'
-       const testParamsRaw = args[2]
-       let params: Record<string, any> = {}
-       if (testParamsRaw) {
-         try { params = JSON.parse(testParamsRaw) } catch { params = {} }
-       }
-       const testExecutor = new LocalExecutor()
+   case 'test_cmd':
+        const testCmd = args[1] || 'screenshot'
+        const testParamsRaw = args[2]
+        let params: Record<string, any> = {}
+        if (testParamsRaw) {
+          try { params = JSON.parse(testParamsRaw) } catch { params = {} }
+        }
+        const testExecutor = new LocalExecutor()
        console.log(chalk.dim(`  Running "coasty-command test_cmd ${testCmd}\\n`))
        const result = await testExecutor.executeCommand(testCmd, params)
        console.log(JSON.stringify(result, null, 2))

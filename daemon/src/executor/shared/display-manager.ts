@@ -1,6 +1,5 @@
 /**
- * Display manager — ported from Electron's display-manager.ts
- * Uses Node.js os.userInfo() + platform-specific commands to detect displays/monitors.
+ * Display manager — detects displays/monitors using platform-specific methods.
  * Provides: getDisplayList, getActiveDisplay, setActiveDisplay
  */
 
@@ -20,6 +19,156 @@ let currentIdCounter = 0
 
 function nextId(): number {
   return ++currentIdCounter
+}
+
+function parseXrandrOutput(): DisplayInfo[] {
+  const { execFileSync } = require('child_process')
+  const displays: DisplayInfo[] = []
+
+  try {
+    const result = execFileSync('xrandr', ['--query'], { timeout: 5000 }).toString()
+
+    const lines = result.split('\n')
+    let currentOutput: { name: string; connected: boolean } | null = null
+
+    for (const line of lines) {
+      const connectedMatch = line.match(/^(\S+)\s+connected/)
+      if (connectedMatch) {
+        currentOutput = { name: connectedMatch[1], connected: true }
+      } else if (line.trim().startsWith('connected')) {
+        const match = line.trim().match(/^connected\s+(\S+)/)
+        if (match) {
+          currentOutput = { name: match[1], connected: true }
+        }
+      }
+
+      if (currentOutput && line.includes('primary')) {
+        const boundsMatch = line.match(/(\d+)x(\d+)\+(\d+)\+(\d+)/)
+        if (boundsMatch) {
+          const [, width, height, x, y] = boundsMatch
+          const id = displays.length === 0 ? 1 : nextId()
+          const isPrimary = displays.length === 0
+          displays.push({
+            id,
+            name: currentOutput.name || `Display ${id}`,
+            width: parseInt(width),
+            height: parseInt(height),
+            isPrimary,
+            scaleFactor: 1,
+            bounds: { x: parseInt(x), y: parseInt(y), width: parseInt(width), height: parseInt(height) },
+          })
+          currentOutput = null
+        }
+      } else if (currentOutput && line.match(/^\s*(\d+)x(\d+)/) && !line.includes('connected')) {
+        const match = line.match(/^\s*(\d+)x(\d+)\+(\d+)\+(\d+)/)
+        if (match && line.trim() !== '') {
+          const [, width, height, x, y] = match
+          const id = displays.length === 0 ? 1 : nextId()
+          const isPrimary = displays.length === 0
+          displays.push({
+            id,
+            name: currentOutput.name || `Display ${id}`,
+            width: parseInt(width),
+            height: parseInt(height),
+            isPrimary,
+            scaleFactor: 1,
+            bounds: { x: parseInt(x), y: parseInt(y), width: parseInt(width), height: parseInt(height) },
+          })
+          currentOutput = null
+        }
+      }
+    }
+  } catch {
+    // xrandr failed — fall through to screeninfo or defaults
+  }
+
+  // Fallback: try screeninfo
+  if (displays.length === 0) {
+    try {
+      const result = execFileSync('python3', ['-c', `
+import subprocess, sys
+try:
+    import screeninfo
+    monitors = screeninfo.get_monitors()
+    for i, m in enumerate(monitors):
+        is_primary = "PRIMARY" in str(m) if hasattr(m, 'is_primary') else i == 0
+        print(f"{m.name},{m.width},{m.height},{m.x},{m.y},{is_primary}")
+except ImportError:
+    print("NOT_INSTALLED")
+`], { timeout: 5000 }).toString()
+
+      if (result.trim() !== 'NOT_INSTALLED') {
+        for (const line of result.trim().split('\n')) {
+          const [name, width, height, x, y, isPrimary] = line.split(',')
+          const id = parseInt(width) || nextId()
+          displays.push({
+            id,
+            name: name || `Display ${id}`,
+            width: parseInt(width) || 1920,
+            height: parseInt(height) || 1080,
+            isPrimary: isPrimary === 'True',
+            scaleFactor: 1,
+            bounds: { x: parseInt(x) || 0, y: parseInt(y) || 0, width: parseInt(width) || 1920, height: parseInt(height) || 1080 },
+          })
+        }
+      }
+    } catch { /* screeninfo not available */ }
+  }
+
+  return displays
+}
+
+function detectLinuxDisplayInfo(): DisplayInfo[] {
+  // Try Wayland-specific tools first
+  const { execFileSync, spawnSync } = require('child_process')
+
+  // Try hyprctl (Hyprland)
+  if (process.env.HYPRLAND_CMD || process.env.HYPRLAND_INSTANCE_SIGNATURE) {
+    try {
+      const result = execFileSync('hyprctl', ['monitors'], { timeout: 5000 }).toString()
+      const lines = result.trim().split('\n\n')
+      const displays: DisplayInfo[] = []
+
+      for (const block of lines) {
+        const nameMatch = block.match(/name\s+(.*)/)
+        const resMatch = block.match(/resolution\s+(.*)/)
+        const posMatch = block.match(/origin\s+(.*)/)
+        const isPrimary = block.includes('current') || posMatch?.index === 0
+
+        if (nameMatch && resMatch && posMatch) {
+          const resolution = resMatch[1].split(' ').map(Number)
+          const origin = posMatch[1].split(' ').map(Number)
+          displays.push({
+            id: displays.length + 1,
+            name: nameMatch[1].trim(),
+            width: resolution[0],
+            height: resolution[1],
+            isPrimary: isPrimary && !displays.some(d => d.isPrimary),
+            scaleFactor: 1,
+            bounds: { x: origin[0], y: origin[1], width: resolution[0], height: resolution[1] },
+          })
+        }
+      }
+
+      if (displays.length > 0) return displays
+    } catch { /**/ }
+  }
+
+  // Try wayland display server tools
+  if (process.env.WAYLAND_DISPLAY) {
+    // Try wlrctl
+    try {
+      const result = execFileSync('wlrctl', ['output', '--print'], { timeout: 5000 }).toString()
+      // Parse wlrctl output if available
+    } catch { /**/ }
+  }
+
+  // Fall back to xrandr (works via XWayland on Wayland too)
+  try {
+    return parseXrandrOutput()
+  } catch { /**/ }
+
+  return []
 }
 
 export function getDisplayList(): DisplayInfo[] {
@@ -66,14 +215,14 @@ export function getDisplayList(): DisplayInfo[] {
       }
     } catch { /* fallback to primary only */ }
   } else if (process.platform === 'darwin') {
-    // macOS: use screen command to detect displays
+    // macOS: use system_profiler to detect displays
     const { execFileSync } = require('child_process')
     try {
       const result = execFileSync('/usr/sbin/system_profiler', [
         'SPDisplaysDataType', '-json',
-      ], { timeout: 5000 }).toString().trim()
+      ], { timeout: 5000 }).toString()
 
-      // Fallback: use 'screen' CLI if available
+      // Fallback: use 'screeninfo' or system_profiler
       let foundPrimary = false
       try {
         const screens = execFileSync('/bin/bash', [
@@ -115,6 +264,14 @@ export function getDisplayList(): DisplayInfo[] {
         }
       } catch { /* no screeninfo */ }
     } catch { /* fallback to primary only */ }
+  }
+
+  // Linux: detect displays
+  if (process.platform === 'linux') {
+    const linuxDisplays = detectLinuxDisplayInfo()
+    if (linuxDisplays.length > 0) {
+      linuxDisplays.forEach(d => displays.push(d))
+    }
   }
 
   // Fallback: single primary display covering 0,0 at 1920x1080
