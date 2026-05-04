@@ -6,7 +6,7 @@
  * - Linux: grim+slurp (Wayland), scrot (X11), gnome-screenshot, import
  */
 
-import { execFile } from 'child_process'
+import { execFile, execFileSync } from 'child_process'
 import * as os from 'os'
 import { getActiveDisplaySize } from '../shared/display-manager'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'fs'
@@ -174,30 +174,18 @@ async function screenshotLinux(): Promise<{ data: Buffer; format: string } | nul
   const uid = process.getuid()
   let xauthPath: string | undefined
 
-  // Find X authority file for proper X11 access
-  try {
-    const xauthPatterns = [
-      `/run/user/${uid}/.Xauthority`,
-      `/run/user/${uid}/xauth_*`,
-      `/tmp/.X11-unix/X*`,
-    ]
-    const fs = require('node:fs')
-    for (const pattern of xauthPatterns) {
-      try {
-        const files = fs.globSync(pattern)
-        if (files.length > 0) {
-          for (const f of files) {
-            if (!f.includes('lock')) {
-              xauthPath = f
-              break
-            }
-          }
-          if (!xauthPath && files.length > 0) xauthPath = files[0]
-          break
-        }
-      } catch { /* ignore */ }
-    }
-  } catch { /* use default XAUTHORITY */ }
+  // Find X authority file using shell find (globSync doesn't expand patterns in older Node)
+   try {
+     const uidDir = `/run/user/${uid}`
+     const result = execFileSync('find', [uidDir, '-maxdepth', '2', '-name', 'xauth_*', '-type', 'f'], { timeout: 1000 })
+     if (result && result.toString().trim()) {
+       const paths = result.toString().trim().split('\n')
+       for (const p of paths) {
+         const trimmed = p.trim()
+         if (trimmed && !trimmed.includes('lock')) { xauthPath = trimmed; break }
+       }
+     }
+   } catch { xauthPath = undefined }
 
   // ── Wayland paths ──
   if (wayland) {

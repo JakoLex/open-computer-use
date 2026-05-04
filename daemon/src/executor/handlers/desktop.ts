@@ -8,7 +8,9 @@
  */
 
 import { execFile, spawn } from 'child_process'
+import * as fs from 'fs'
 import * as os from 'os'
+import * as path from 'path'
 import { isAccessibilityGranted } from '../shared/permissions'
 
 let _hasPromptedAccessibility = false
@@ -52,6 +54,16 @@ function runBash(command: string): Promise<string> {
   })
 }
 
+function runBashWithEnv(command: string, envOverrides?: Record<string, string | undefined>): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const opts = { timeout: 10000, ...envOverrides }
+    execFile('/bin/bash', ['-c', command], opts, (error, stdout, stderr) => {
+      if (error) reject(error)
+      else resolve(stdout.trim())
+    })
+  })
+}
+
 function runSwift(code: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const proc = spawn('swift', ['-'], { timeout: 10000 })
@@ -67,6 +79,45 @@ function runSwift(code: string): Promise<string> {
     proc.stdin.write(code)
     proc.stdin.end()
   })
+}
+
+let _xauthorityCache: string | null = null
+
+function discoverXauthority(): string | null {
+  if (_xauthorityCache) return _xauthorityCache
+  try {
+    const uid = os.userInfo().uid
+    const home = os.homedir()
+    const xauthDir = `/run/user/${uid}`
+    if (fs.existsSync(xauthDir)) {
+      const files = fs.readdirSync(xauthDir)
+        .filter(f => f.startsWith('xauth_') || f.startsWith('.xauth'))
+        .sort()
+      if (files.length > 0) {
+        _xauthorityCache = path.join(xauthDir, files[files.length - 1])
+        return _xauthorityCache
+      }
+    }
+    const iceAuth = path.join(home, '.ICEauthority')
+    if (fs.existsSync(iceAuth)) {
+      _xauthorityCache = iceAuth
+      return _xauthorityCache
+    }
+    const xauth = path.join(home, '.Xauthority')
+    if (fs.existsSync(xauth)) {
+      _xauthorityCache = xauth
+      return xauth
+    }
+  } catch (_) {}
+  return null
+}
+
+function getLinuxX11Env(): Record<string, string | undefined> {
+  const xauthFile = discoverXauthority() || null
+  return {
+    DISPLAY: ':0',
+    ...(xauthFile ? { XAUTHORITY: xauthFile } : {}),
+  }
 }
 
 function validateInt(v: any, name: string): number {
@@ -269,7 +320,7 @@ ${button === 'right'
   : '[MouseOps]::mouse_event([MouseOps]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0); [MouseOps]::mouse_event([MouseOps]::MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)'}
 `)
     } else if (process.platform === 'linux') {
-      await runBash(`xdotool mousemove ${x} ${y} click ${button === 'right' ? '3' : '1'}`)
+      await runBashWithEnv(`xdotool mousemove ${x} ${y} click ${button === 'right' ? '3' : '1'}`, getLinuxX11Env())
     } else if (process.platform === 'darwin') {
       const downType = button === 'right' ? ".rightMouseDown" : '.leftMouseDown'
       const upType = button === 'right' ? ".rightMouseUp" : '.leftMouseUp'
@@ -344,12 +395,13 @@ export async function desktopClickWithModifiers(params: {
       }
       await runPowershell(lines.join('\n'))
     } else if (process.platform === 'linux') {
+      const linuxEnv = getLinuxX11Env()
       const parts: string[] = []
       for (const key of keys) {
         parts.push(`xdotool keydown ${safeXdotoolKey(key)}`)
       }
       const xdoBtn = button === 'right' ? 3 : button === 'middle' ? 2 : 1
-      parts.push(`xdotool mousemove --sync ${x} ${y}`)
+      parts.push(`xdotool mousemove ${x} ${y}`)
       if (clicks >= 2) {
         parts.push(`xdotool click --repeat ${clicks} --delay 80 ${xdoBtn}`)
       } else {
@@ -358,7 +410,7 @@ export async function desktopClickWithModifiers(params: {
       for (const key of keys) {
         parts.push(`xdotool keyup ${safeXdotoolKey(key)}`)
       }
-      await runBash(parts.join(' && '))
+      await runBashWithEnv(parts.join(' && '), linuxEnv)
     } else if (process.platform === 'darwin') {
       const flagMap: Record<string, string> = {
         shift: '.maskShift', cmd: '.maskCommand', command: '.maskCommand',
@@ -436,7 +488,7 @@ Start-Sleep -Milliseconds 50
 [MouseOps2]::mouse_event([MouseOps2]::MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
 `)
     } else if (process.platform === 'linux') {
-      await runBash(`xdotool mousemove ${x} ${y} click --repeat 2 1`)
+      await runBashWithEnv(`xdotool mousemove ${x} ${y} click --repeat 2 1`, getLinuxX11Env())
     } else if (process.platform === 'darwin') {
       await runSwift(`
 import Cocoa
@@ -477,8 +529,8 @@ export async function desktopType(params: { text: string }): Promise<any> {
 Add-Type -AssemblyName System.Windows.Forms
 [System.Windows.Forms.SendKeys]::SendWait('${escaped.replace(/'/g, "''")}')
 `)
-    } else if (process.platform === 'linux') {
-      await runBash(`xdotool type --clearmodifiers -- ${JSON.stringify(text)}`)
+  } else if (process.platform === 'linux') {
+       await runBashWithEnv(`xdotool type --clearmodifiers -- ${JSON.stringify(text)}`, getLinuxX11Env())
     } else if (process.platform === 'darwin') {
       await runOsascript(`tell application "System Events" to keystroke "${escapeAppleScript(text)}"`)
     }
@@ -511,11 +563,12 @@ Add-Type -AssemblyName System.Windows.Forms
 [System.Windows.Forms.SendKeys]::SendWait('${sendKeys.replace(/'/g, "''")}')
 `)
       }
-    } else if (process.platform === 'linux') {
-      for (const key of keys) {
-        const mapped = safeXdotoolKey(key)
-        await runBash(`xdotool key ${mapped}`)
-      }
+ } else if (process.platform === 'linux') {
+       const x11env = getLinuxX11Env()
+       for (const key of keys) {
+         const mapped = safeXdotoolKey(key)
+         await runBashWithEnv(`xdotool key ${mapped}`, x11env)
+       }
     } else if (process.platform === 'darwin') {
       for (const key of keys) {
         const lower = key.toLowerCase()
@@ -567,7 +620,7 @@ export async function desktopKeyCombo(params: { keys: string[] }): Promise<any> 
         }
       }
       const combo = [...modifiers, finalKey].join('+')
-      await runBash(`xdotool key ${combo}`)
+      await runBashWithEnv(`xdotool key ${combo}`, getLinuxX11Env())
     } else if (process.platform === 'darwin') {
       const modifiers: string[] = []
       let finalKey = ''
@@ -636,13 +689,14 @@ public class ScrollOps {
 [ScrollOps]::mouse_event([ScrollOps]::MOUSEEVENTF_WHEEL, 0, 0, ${(scrollUp ? 120 : -120) * amount}, 0)
 `)
     } else if (process.platform === 'linux') {
+      const linuxEnv = getLinuxX11Env()
       const parts: string[] = []
       if (x !== undefined && y !== undefined) {
-        parts.push(`xdotool mousemove --sync ${x} ${y}`)
+        parts.push(`xdotool mousemove ${x} ${y}`)
       }
       const button = scrollUp ? 4 : 5
       parts.push(`xdotool click --repeat ${amount} --delay 50 ${button}`)
-      await runBash(parts.join(' && '))
+      await runBashWithEnv(parts.join(' && '), linuxEnv)
     } else if (process.platform === 'darwin') {
       const delta = scrollUp ? amount * 3 : -(amount * 3)
       const moveCmd = (x !== undefined && y !== undefined)
@@ -727,24 +781,25 @@ export async function desktopDrag(params: {
       }
       await runPowershell(lines.join('\n'))
     } else if (process.platform === 'linux') {
+      const linuxEnv = getLinuxX11Env()
       const parts: string[] = []
       for (const key of hold_keys) {
         parts.push(`xdotool keydown ${safeXdotoolKey(key)}`)
       }
-      parts.push(`xdotool mousemove --sync ${x1} ${y1}`)
-      parts.push('sleep 0.2')
+      await runBashWithEnv(`xdotool mousemove ${x1} ${y1}`, linuxEnv)
+      parts.push('sleep 0.3')
       parts.push('xdotool mousedown 1')
-      parts.push('sleep 0.15')
+      parts.push('sleep 0.2')
       const xm = Math.round((x1 + x2) / 2), ym = Math.round((y1 + y2) / 2)
-      parts.push(`xdotool mousemove --sync ${xm} ${ym}`)
-      parts.push('sleep 0.05')
-      parts.push(`xdotool mousemove --sync ${x2} ${y2}`)
+      parts.push(`xdotool mousemove ${xm} ${ym}`)
       parts.push('sleep 0.15')
+      parts.push(`xdotool mousemove ${x2} ${y2}`)
+      parts.push('sleep 0.2')
       parts.push('xdotool mouseup 1')
       for (const key of hold_keys) {
         parts.push(`xdotool keyup ${safeXdotoolKey(key)}`)
       }
-      await runBash(parts.join(' && '))
+      await runBashWithEnv(parts.join(' && '), linuxEnv)
     } else if (process.platform === 'darwin') {
       await runSwift(`
 import Cocoa
